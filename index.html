@@ -1,36 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vue-Core</title>
 </head>
+
 <body>
   <div id="app">
-    <input type="text" v-model="name">
-    <div v-on:click="myFn">我是div</div>
-    {{name}}
-    <p>{{getName}}</p>
+    <p>{{ message }}</p>
+    <p>Count: {{ count }}</p>
+    <button v-on:click="increment">Increment</button>
+    <child-component></child-component>
   </div>
+
   <script src="./vue.js"></script>
   <script>
-    const vm = new Vue({
-      el: '#app',
+          const app = new Vue({
+            el: "#app",
       data: {
-        name: 'Vue-Core'
+        message: "Hello from Parent",
+        count: 0,
       },
       methods: {
-        myFn() {
-          this.name = 'Vue-Core-2';
+        increment() {
+          this.count++;
+        },
+        sendMessage() {
+          this.$emit("send-message", "HELLO FROM PARENT");
         }
       },
-      computed: {
-        getName() {
-          return this.name + '---';
-        }
-      }
-    })
-    console.log(vm);
+          components: {
+            "child-component": {
+              data() {
+                return {
+                  childMessage: "Hello from Child",
+                };
+              },
+              methods: {
+                greet() {
+                  alert(this.childMessage);
+                },
+              },
+              mounted() {
+                this.$on("send-message", "HELLO FROM CHILD");
+              },
+              template: `
+        <div>
+          <p>{{ childMessage }}</p>
+          <button v-on:click="greet">Greet</button>
+        </div>
+      `,
+            },
+          },
+        });
+          console.log(app);
   </script>
 </body>
+
 </html>

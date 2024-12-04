@@ -1,5 +1,8 @@
 class Vue {
   constructor(options) {
+    /**
+     * 生命周期钩子
+     */
     // 保存创建时候传递过来的数据
     if (this.isElement(options.el)) {
       this.$el = options.el;
@@ -10,6 +13,8 @@ class Vue {
     this.proxyData();
     this.$methods = options.methods;
     this.$computed = options.computed;
+    this.$components = options.components || {};
+    this.$events = {};
     /**
      * 将computed中的方法添加到$data中, 只有这样将来我们在渲染的时候才能够从$data中获取到computed中定义的计算属性
      */
@@ -19,6 +24,19 @@ class Vue {
       // 给所有的数据添加get/set方法
       new Observer(this.$data);
       new Compire(this);
+    }
+  }
+  $on(eventName, cb) {
+    if (!this.$events[eventName]) {
+      this.$events[eventName] = [];
+    }
+    this.$events[eventName].push(cb);
+  }
+  $emit(eventName, ...args) {
+    if (this.$events[eventName]) {
+      this.$events[eventName].forEach(cb => {
+        cb(...args);
+      });
     }
   }
   // 判断是否是一个元素
@@ -34,8 +52,8 @@ class Vue {
         },
         set: (newVal) => {
           this.$data[key] = newVal;
-        }
-      })
+        },
+      });
     }
   }
   computed2Data() {
@@ -48,12 +66,12 @@ class Vue {
             computedValue = this.$computed[key].call(this); // 重新计算
             isDirty = false; // 缓存计算值
           }
-          return computedValue
+          return computedValue;
         },
         set(newVal) {
           this.$computed[key].call(this, newVal);
-        }
-      })
+        },
+      });
     }
   }
 }
@@ -62,12 +80,12 @@ class Compire {
   constructor(vm) {
     this.vm = vm;
     /**
- * 1.将网页上的元素放到内存中
- * 2.利用指定的数据编译内存中的元素
- * 3.将编译好的内容重新绘制回网页
- */
+     * 1.将网页上的元素放到内存中
+     * 2.利用指定的数据编译内存中的元素
+     * 3.将编译好的内容重新绘制回网页
+     */
     // 将元素存入内存
-    let fragment = this.node2fragment(this.vm.$el);
+    const fragment = this.node2fragment(this.vm.$el);
     // 编译
     this.buildTemplate(fragment);
     // 渲染饭
@@ -87,39 +105,46 @@ class Compire {
     return fragment;
   }
   buildTemplate(fragment) {
-    let nodeList = [...fragment.childNodes];
-    nodeList.forEach(node => {
+    [...fragment.childNodes].forEach((node) => {
       // 判断当前遍历到的节点是元素还是文本
       // 如果是一个元素，需要判断有没有v-model属性
       // 如果是一个文本, 需要判断有没有{{}}
       if (this.vm.isElement(node)) {
         // 是一个元素
-        this.buildElement(node);
-        // 处理子元素
-        this.buildTemplate(node); // 递归一下
+        // this.buildElement(node);
+        const tagName = node.tagName.toLowerCase();
+        if (this.vm.$components[tagName]) {
+          this.buildComponent(node, tagName);
+        } else {
+          this.buildElement(node);
+          this.buildTemplate(node);
+        }
       } else {
         // 不是
         this.buildText(node);
       }
+    });
+  }
+  buildComponent(node, tagName) {
+    const Component = this.vm.$components[tagName];
+    const childVm = new Vue({
+      el: node,
+      data: typeof Component === 'function' ? Component.data() : Component.data,
+      methods: Component.methods,
+      computed: Component.computed,
+      components: Component.components,
     })
+    // 用子组件的内容替换占位符
+    node.replaceWith(childVm.$el);
   }
   buildElement(node) {
-    let attrs = [...node.attributes];
-    attrs.forEach(attr => {
-      const { name, value } = attr;
-      /**
-       * v-model="name"
-       * v-on:click="fn"
-       * name v-on:click
-       * value myFn 函数名
-       */
-      if (name.startsWith('v-')) {
-        // 指令 v-model="name"
-        let [dirName, dirType] = name.split(':');['v-on', 'click'];
-        let [, dir] = dirName.split('-');
+    [...node.attributes].forEach(({ name, value }) => {
+      if (name.startsWith("v-")) {
+        const [dirName, dirType] = name.split(':');
+        const dir = dirName.split("-")[1];
         CompireUtil[dir](node, value, this.vm, dirType);
       }
-    })
+    });
   }
   buildText(node) {
     let content = node.textContent;
@@ -133,7 +158,7 @@ class Compire {
 const CompireUtil = {
   // 获取递归value
   getValue(vm, value) {
-    return value.split('.').reduce((data, currentKey) => {
+    return value.split(".").reduce((data, currentKey) => {
       // 1. data = $data, currentKey = time
       // 2. data = $data.time
       return data[currentKey.trim()];
@@ -144,11 +169,11 @@ const CompireUtil = {
     const reg = /\{\{(.+?)\}\}/ig;
     const val = value.replace(reg, (...args) => {
       return this.getValue(vm, args[1]);
-    })
+    });
     return val;
   },
   setValue(vm, attr, newValue) {
-    attr.split('.').reduce((data, currentAttr, index, arr) => {
+    attr.split(".").reduce((data, currentAttr, index, arr) => {
       if (index === arr.length - 1) {
         data[currentAttr] = newValue;
       }
@@ -156,82 +181,96 @@ const CompireUtil = {
     }, vm.$data);
   },
 
-model: function (node, value, vm) {
-  const tagName = node.tagName.toLowerCase();
-  
-  if (tagName === 'input' && node.type === 'checkbox') {
-    new Watcher(vm, value, (newVal) => {
-      node.checked = newVal;
+  model: function (node, value, vm) {
+    const tagName = node.tagName.toLowerCase();
+
+    if (tagName === "input" && node.type === "checkbox") {
+      new Watcher(vm, value, (newVal) => {
+        node.checked = newVal;
+      });
+      node.checked = this.getValue(vm, value);
+      node.addEventListener("change", (e) => {
+        this.setValue(vm, value, e.target.checked);
+      });
+    } else if (tagName === "input" && node.type === "radio") {
+      new Watcher(vm, value, (newVal) => {
+        node.checked = node.value === newVal;
+      });
+      node.checked = node.value === this.getValue(vm, value);
+      node.addEventListener("change", (e) => {
+        this.setValue(vm, value, e.target.value);
+      });
+    } else if (tagName === "select") {
+      new Watcher(vm, value, (newVal) => {
+        node.value = newVal;
+      });
+      node.value = this.getValue(vm, value);
+      node.addEventListener("change", (e) => {
+        this.setValue(vm, value, e.target.value);
+      });
+    } else {
+      new Watcher(vm, value, (newVal) => {
+        node.value = newVal;
+      });
+      node.value = this.getValue(vm, value);
+      node.addEventListener("input", (e) => {
+        this.setValue(vm, value, e.target.value);
+      });
+    }
+  },
+  html: function (node, value, vm) {
+    new Watcher(vm, value, (newVal, oldVal) => {
+      node.innerHTML = newVal;
     });
-    node.checked = this.getValue(vm, value);
-    node.addEventListener('change', (e) => {
-      this.setValue(vm, value, e.target.checked);
+    const val = this.getValue(vm, value);
+    node.innerHTML = val;
+  },
+  text: function (node, value, vm) {
+    new Watcher(vm, value, (newVal, oldVal) => {
+      node.innerText = newVal;
     });
-  } else if (tagName === 'input' && node.type === 'radio') {
-    new Watcher(vm, value, (newVal) => {
-      node.checked = (node.value === newVal);
+    const val = this.getValue(vm, value);
+    node.innerText = val;
+  },
+  content: function (node, value, vm) {
+    const reg = /\{\{(.+?)\}\}/gi;
+    const val = value.replace(reg, (...args) => {
+      new Watcher(vm, args[1], (newVal, oldVal) => {
+        node.textContent = newVal;
+      });
+      return this.getValue(vm, args[1]);
     });
-    node.checked = (node.value === this.getValue(vm, value));
-    node.addEventListener('change', (e) => {
-      this.setValue(vm, value, e.target.value);
+    node.textContent = val;
+  },
+  on: function (node, value, vm, type) {
+    node.addEventListener(type, (e) => {
+      vm.$methods[value].call(vm, e);
     });
-  } else if (tagName === 'select') {
-    new Watcher(vm, value, (newVal) => {
-      node.value = newVal;
-    });
-    node.value = this.getValue(vm, value);
-    node.addEventListener('change', (e) => {
-      this.setValue(vm, value, e.target.value);
-    });
-  } else {
-    new Watcher(vm, value, (newVal) => {
-      node.value = newVal;
-    });
-    node.value = this.getValue(vm, value);
-    node.addEventListener('input', (e) => {
-      this.setValue(vm, value, e.target.value);
-    });
-  }
-}
-  ,
-html: function (node, value, vm) {
-  new Watcher(vm, value, (newVal, oldVal) => {
-    node.innerHTML = newVal;
-  })
-  const val = this.getValue(vm, value);
-  node.innerHTML = val;
-}
-  ,
-text: function (node, value, vm) {
-  new Watcher(vm, value, (newVal, oldVal) => {
-    node.innerText = newVal;
-  });
-  const val = this.getValue(vm, value);
-  node.innerText = val;
-},
-content: function (node, value, vm) {
-  const reg = /\{\{(.+?)\}\}/gi;
-  const val = value.replace(reg, (...args) => {
-    new Watcher(vm, args[1], (newVal, oldVal) => {
-      node.textContent = newVal;
+  },
+  for: function (node, value, vm) {
+    const [item, array] = value.split(" in ");
+    const arrayData = CompireUtil.getValue(vm, array);
+    node.innerHTML = "";
+    arrayData.forEach((dataItem, index) => {
+      const cloneNode = node.cloneNode(true);
+      // 替换绑定值
+      cloneNode.textContent = cloneNode.textContent.replace(`{{$(item)}}`, dataItem);
+      node.parentNode.appendChild(cloneNode);
     })
-    return this.getValue(vm, args[1]);
-  });
-  node.textContent = val;
-},
-on: function (node, value, vm, type) {
-  node.addEventListener(type, (e) => {
-    vm.$methods[value].call(vm, e);
-  })
-}
-}
+  },
+  bind: function (node, value, vm) {
+    const [attr, expression] = value.split(":");
+    const newValue = CompireUtil.getValue(vm, expression);
+    node.setAttribute(attr, newValue);
+  }
+};
 
 class Observer {
   constructor(data) {
     this.observer(data);
   }
   observer(obj) {
-    if (obj && typeof obj === 'object') {
+    if (obj && typeof obj === "object") {
       for (const key in obj) {
         this.defineReactive(obj, key, obj[key]);
       }
@@ -251,10 +290,10 @@ class Observer {
         if (value !== newValue) {
           value = newValue;
           dep.notify();
-          console.log('属性' + key + '已经被监听了，现在值为：' + newValue);
+          console.log("属性" + key + "已经被监听了，现在值为：" + newValue);
         }
-      }
-    })
+      },
+    });
   }
 }
 
@@ -296,8 +335,8 @@ class Dep {
   }
   // 发布订阅
   notify() {
-    this.subs.forEach(watcher => {
+    this.subs.forEach((watcher) => {
       watcher.update();
-    })
+    });
   }
 }
