@@ -40,9 +40,15 @@ class Vue {
   }
   computed2Data() {
     for (const key in this.$computed) {
+      let computedValue;
+      let isDirty = false;
       Object.defineProperty(this.$data, key, {
         get: () => {
-          return this.$computed[key].call(this);
+          if (isDirty) {
+            computedValue = this.$computed[key].call(this); // 重新计算
+            isDirty = false; // 缓存计算值
+          }
+          return computedValue
         },
         set(newVal) {
           this.$computed[key].call(this, newVal);
@@ -150,50 +156,74 @@ const CompireUtil = {
     }, vm.$data);
   },
 
-  model: function (node, value, vm) {
-    // 第一次渲染时给所有属性添加观察者
-    new Watcher(vm, value, (newVal, oldVal) => {
+model: function (node, value, vm) {
+  const tagName = node.tagName.toLowerCase();
+  
+  if (tagName === 'input' && node.type === 'checkbox') {
+    new Watcher(vm, value, (newVal) => {
+      node.checked = newVal;
+    });
+    node.checked = this.getValue(vm, value);
+    node.addEventListener('change', (e) => {
+      this.setValue(vm, value, e.target.checked);
+    });
+  } else if (tagName === 'input' && node.type === 'radio') {
+    new Watcher(vm, value, (newVal) => {
+      node.checked = (node.value === newVal);
+    });
+    node.checked = (node.value === this.getValue(vm, value));
+    node.addEventListener('change', (e) => {
+      this.setValue(vm, value, e.target.value);
+    });
+  } else if (tagName === 'select') {
+    new Watcher(vm, value, (newVal) => {
       node.value = newVal;
     });
-    const newVal = this.getValue(vm, value);
-    node.value = newVal;
+    node.value = this.getValue(vm, value);
+    node.addEventListener('change', (e) => {
+      this.setValue(vm, value, e.target.value);
+    });
+  } else {
+    new Watcher(vm, value, (newVal) => {
+      node.value = newVal;
+    });
+    node.value = this.getValue(vm, value);
     node.addEventListener('input', (e) => {
-      const newVal = e.target.value;
-      // 触发属性的set方法，将新值赋值给属性
-      this.setValue(vm, value, newVal);
-    })
-  }
-  ,
-  html: function (node, value, vm) {
-    new Watcher(vm, value, (newVal, oldVal) => {
-      node.innerHTML = newVal;
-    })
-    const val = this.getValue(vm, value);
-    node.innerHTML = val; 
-  }
-  ,
-  text: function (node, value, vm) {
-    new Watcher(vm, value, (newVal, oldVal) => {
-      node.innerText = newVal;
+      this.setValue(vm, value, e.target.value);
     });
-    const val = this.getValue(vm, value);
-    node.innerText = val;
-  },
-  content: function (node, value, vm) {
-    const reg = /\{\{(.+?)\}\}/gi;
-    const val = value.replace(reg, (...args) => {
-      new Watcher(vm, args[1], (newVal, oldVal) => {
-        node.textContent = newVal;
-      })
-      return this.getValue(vm, args[1]);
-    });
-    node.textContent = val;
-  },
-  on: function (node, value, vm, type) {
-    node.addEventListener(type, (e) => {
-      vm.$methods[value].call(vm, e);
-    })
   }
+}
+  ,
+html: function (node, value, vm) {
+  new Watcher(vm, value, (newVal, oldVal) => {
+    node.innerHTML = newVal;
+  })
+  const val = this.getValue(vm, value);
+  node.innerHTML = val;
+}
+  ,
+text: function (node, value, vm) {
+  new Watcher(vm, value, (newVal, oldVal) => {
+    node.innerText = newVal;
+  });
+  const val = this.getValue(vm, value);
+  node.innerText = val;
+},
+content: function (node, value, vm) {
+  const reg = /\{\{(.+?)\}\}/gi;
+  const val = value.replace(reg, (...args) => {
+    new Watcher(vm, args[1], (newVal, oldVal) => {
+      node.textContent = newVal;
+    })
+    return this.getValue(vm, args[1]);
+  });
+  node.textContent = val;
+},
+on: function (node, value, vm, type) {
+  node.addEventListener(type, (e) => {
+    vm.$methods[value].call(vm, e);
+  })
+}
 }
 
 class Observer {
