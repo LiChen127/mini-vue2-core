@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vue-Core</title>
+</head>
+<body>
+  <div id="app">
+    <input type="text" v-model="name">
+    <div v-on:click="myFn">我是div</div>
+    {{name}}
+    <p>{{getName}}</p>
+  </div>
+  <script src="./vue.js"></script>
+  <script>
+    const vm = new Vue({
+      el: '#app',
+      data: {
+        name: 'Vue-Core'
+      },
+      methods: {
+        myFn() {
+          this.name = 'Vue-Core-2';
+        }
+      },
+      computed: {
+        getName() {
+          return this.name + '---';
+        }
+      }
+    })
+    console.log(vm);
+  </script>
+</body>
+</html>
